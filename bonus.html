@@ -28,6 +28,10 @@
       }
     </script>
     <link rel="stylesheet" href="./index.css">
+    <!-- Подключаем PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+    <!-- Воркер для PDF.js (улучшает производительность) -->
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js`;</script>
 </head>
 <body class="bg-app-bg">
 
@@ -98,10 +102,8 @@
                     <span class="text-white font-semibold">Загрузка документа...</span>
                 </div>
             </div>
-            <iframe 
-                id="pdf-viewer" 
-                class="w-full h-full border-none rounded-2xl"
-            ></iframe>
+            <!-- Контейнер для рендеринга PDF с помощью PDF.js -->
+            <div id="pdf-canvas-container" class="w-full h-full overflow-y-auto bg-white rounded-2xl"></div>
         </div>
     </div>
 
@@ -129,34 +131,59 @@
             const openPdfButtons = document.querySelectorAll('.open-pdf-btn');
             const closePdfBtn = document.getElementById('close-pdf-btn');
             const pdfModal = document.getElementById('pdf-modal');
-            const pdfViewer = document.getElementById('pdf-viewer');
             const pdfLoader = document.getElementById('pdf-loader');
+            const canvasContainer = document.getElementById('pdf-canvas-container');
+            let pdfDoc = null;
 
             openPdfButtons.forEach(btn => {
                 btn.addEventListener('click', () => {
                     const pdfSrc = btn.getAttribute('data-pdf-src');
-                    if (pdfSrc && pdfViewer && pdfLoader) {
-                        // Показываем модальное окно и загрузчик
+                    if (pdfSrc) {
                         pdfModal.classList.remove('hidden');
                         pdfLoader.style.display = 'flex';
-                        pdfViewer.style.visibility = 'hidden';
-
-                        // Устанавливаем src для iframe. Добавляем #toolbar=0, чтобы скрыть панель инструментов
-                        pdfViewer.setAttribute('src', `${pdfSrc}#toolbar=0`);
-
-                        // Когда iframe загрузится, скрываем загрузчик
-                        pdfViewer.onload = () => {
-                            pdfLoader.style.display = 'none';
-                            pdfViewer.style.visibility = 'visible';
-                        };
+                        canvasContainer.innerHTML = ''; // Очищаем контейнер
+                        
+                        renderPdf(pdfSrc);
                     }
                 });
             });
 
+            async function renderPdf(url) {
+                try {
+                    const loadingTask = pdfjsLib.getDocument(url);
+                    pdfDoc = await loadingTask.promise;
+                    pdfLoader.style.display = 'none';
+
+                    // Рендерим все страницы
+                    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+                        const page = await pdfDoc.getPage(pageNum);
+                        const viewport = page.getViewport({ scale: 1.5 });
+                        
+                        const canvas = document.createElement('canvas');
+                        const context = canvas.getContext('2d');
+                        canvas.height = viewport.height;
+                        canvas.width = viewport.width;
+                        canvas.style.display = 'block';
+                        canvas.style.margin = '0 auto 10px auto';
+
+                        canvasContainer.appendChild(canvas);
+
+                        await page.render({ canvasContext: context, viewport: viewport }).promise;
+                    }
+                } catch (error) {
+                    console.error('Ошибка при загрузке или рендеринге PDF:', error);
+                    pdfLoader.innerHTML = '<span class="text-white font-semibold text-red-400">Не удалось загрузить PDF.</span>';
+                }
+            }
+
             if (closePdfBtn) {
                 closePdfBtn.addEventListener('click', () => {
                     pdfModal.classList.add('hidden');
-                    if (pdfViewer) pdfViewer.setAttribute('src', 'about:blank'); // Очищаем src при закрытии
+                    canvasContainer.innerHTML = ''; // Очищаем содержимое при закрытии
+                    if (pdfDoc) {
+                        pdfDoc.destroy(); // Освобождаем память
+                        pdfDoc = null;
+                    }
                 });
             }
 
@@ -167,4 +194,5 @@
         });
     </script>
 </body>
+
 </html>
